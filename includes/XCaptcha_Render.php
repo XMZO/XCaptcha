@@ -20,7 +20,6 @@ class XCaptcha_Render
         </style>
         <script>
             window.beforeCheckCallback = () => {
-                console.log("XCaptcha: 正在加载验证码样式...");
                 setTimeout(() => {
                     const checkLabel = document.getElementsByClassName('check-label');
                     if (checkLabel.length > 0) {
@@ -30,10 +29,14 @@ class XCaptcha_Render
                         }
                     }
                 }, 50);
-                console.log("XCaptcha: 验证码样式加载完毕!");
             }
-            
+        </script>
+EOF;
 
+        if($page == 'comments'){
+            // 评论页面需要禁用 custom-submit-button
+            echo <<<EOF
+        <script>
             window.addEventListener('load', ()=>{
                 const buttons = document.querySelectorAll('.custom-submit-button');
                 buttons.forEach(btn => {
@@ -42,31 +45,68 @@ class XCaptcha_Render
             });
         </script>
 EOF;
+        }
 
         if($page == 'login'){
             echo <<<EOF
 		    <script>
+                var captchaVerified = false;
+                var buttonObserver = null;
+
 			    window.checkCallback = () => {
+                    if (captchaVerified) return;  // 防止重复执行
+                    captchaVerified = true;
+
                     var jqForm = $("form");
                     var jqFormSubmit = jqForm.find(":submit");
+
+                    // 启用按钮
                     jqFormSubmit.prop('disabled', false);
+                    jqFormSubmit.removeAttr('disabled');
+                    jqFormSubmit[0].disabled = false;
+
+                    // 使用 MutationObserver 监控按钮状态，防止被其他代码禁用
+                    if (jqFormSubmit[0] && !buttonObserver) {
+                        buttonObserver = new MutationObserver(function(mutations) {
+                            mutations.forEach(function(mutation) {
+                                if (mutation.type === 'attributes' && mutation.attributeName === 'disabled') {
+                                    if (captchaVerified && jqFormSubmit[0].disabled) {
+                                        jqFormSubmit[0].disabled = false;
+                                        jqFormSubmit.removeAttr('disabled');
+                                    }
+                                }
+                            });
+                        });
+
+                        buttonObserver.observe(jqFormSubmit[0], {
+                            attributes: true,
+                            attributeFilter: ['disabled']
+                        });
+
+                        // 表单提交时清理 observer
+                        jqForm.one('submit', function() {
+                            if (buttonObserver) {
+                                buttonObserver.disconnect();
+                                buttonObserver = null;
+                            }
+                        });
+                    }
                 };
+
                 $(document).ready(function () {
                     var jqForm = $("form");
                     var jqFormSubmit = jqForm.find(":submit");
                     jqFormSubmit.prop('disabled', true);
                     jqFormSubmit.parent().before(`$captchaScript`);
                     jqFormSubmit.parent().before(`<div class="precheck-label"><p class="waiting">行为验证™ 安全组件加载中...</p></div>`);
-                    
                 });
 		    </script>
-        
+
 EOF;
         }else if($page == 'comments'){
             echo <<<EOF
             <script>
             window.checkCallback = ()=>{
-                console.log("XCaptcha: Success to verify passcode.")
                 var btns = document.getElementsByClassName('custom-submit-button');
                 for(var i=0; i<btns.length; i++){
                     btns[i].disabled = false;
@@ -154,18 +194,35 @@ EOF;
         echo<<<EOF
         <script>
             window.beforeCheckCallback && window.beforeCheckCallback();
-            if (window.isSecureContext && window.crypto) {
-                console.log("Web Crypto API is available and secure context is present.");
-            } else {
-                console.log("Web Crypto API is not available or secure context is not present.");
-            }
-            document.querySelector('#altcha').addEventListener('statechange', (ev) => {
-                //console.log('state:', ev.detail.state);
-                if (ev.detail.state === 'verified') {
-                    //console.log('payload:', ev.detail.payload);
-                    window.checkCallback && window.checkCallback();
+
+            (function() {
+                var listenerRegistered = false;
+                var retryCount = 0;
+                var maxRetries = 10;
+
+                function registerAltchaListener() {
+                    if (listenerRegistered) return;
+
+                    const altchaElement = document.querySelector('#altcha');
+                    if (altchaElement) {
+                        altchaElement.addEventListener('statechange', function(ev) {
+                            if (ev.detail.state === 'verified') {
+                                window.checkCallback && window.checkCallback();
+                            }
+                        });
+                        listenerRegistered = true;
+                    } else if (retryCount < maxRetries) {
+                        retryCount++;
+                        setTimeout(registerAltchaListener, 1000);
+                    }
                 }
-            });
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', registerAltchaListener);
+                } else {
+                    registerAltchaListener();
+                }
+            })();
             </script>
 EOF;
     }
