@@ -193,7 +193,10 @@ EOF;
     private static function echoAltchaContent(){
         echo<<<EOF
         <script>
-            window.beforeCheckCallback && window.beforeCheckCallback();
+            // 延迟调用，等待 Altcha 组件渲染完成
+            setTimeout(() => {
+                window.beforeCheckCallback && window.beforeCheckCallback();
+            }, 500);
 
             (function() {
                 var listenerRegistered = false;
@@ -205,6 +208,9 @@ EOF;
 
                     const altchaElement = document.querySelector('#altcha');
                     if (altchaElement) {
+                        // 确保加载提示被隐藏
+                        window.beforeCheckCallback && window.beforeCheckCallback();
+
                         altchaElement.addEventListener('statechange', function(ev) {
                             if (ev.detail.state === 'verified') {
                                 window.checkCallback && window.checkCallback();
