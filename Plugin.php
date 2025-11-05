@@ -213,6 +213,15 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
     }
 
     /**
+     * 前端登录/注册表单渲染验证码（用于主题中的登录表单）
+     */
+    public static function showLoginCaptcha()
+    {
+        $config = new XCaptcha_Config();
+        XCaptcha_Render::renderFrontendLoginForm($config);
+    }
+
+    /**
      * 给Action使用
      */
     public static function responseGeetest()

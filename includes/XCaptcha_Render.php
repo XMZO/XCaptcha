@@ -308,5 +308,68 @@ EOF;
             self::echoAltchaContent();
         }
     }
-    
+
+    /**
+     * 渲染前端登录/注册表单的验证码（用于主题中的登录表单）
+     * @static
+     * @param XCaptcha_Config $config 配置类
+     */
+    public static function renderFrontendLoginForm(XCaptcha_Config $config)
+    {
+        // 是否启用login的验证码
+        if(!$config->isCaptchaEnabledOnPage('login')){
+            return;
+        }
+        // 密钥是否为空，如果为空则不渲染验证码
+        if(!$config->checkKeys()){
+            return;
+        }
+
+        list($captchaScript, $cdnUrl) = XCaptcha_Utils::getCaptchaScript(
+            $config->getCaptchaChoosen(),
+            $config->getCdnUrl(),
+            $config->getWidgetColor(),
+            $config->getwidgetSize(),
+            $config->getCaptchaId()
+        );
+        if (!$captchaScript) return;
+
+        // 输出验证码 HTML 和回调函数
+        echo <<<EOF
+        <script>
+            window.beforeCheckCallback = () => {
+                setTimeout(() => {
+                    const checkLabel = document.getElementsByClassName('check-label');
+                    if (checkLabel.length > 0) {
+                        const precheckLabel = document.getElementsByClassName('precheck-label');
+                        for(var i=0; i<precheckLabel.length; i++){
+                            precheckLabel[i].style.display = 'none';
+                        }
+                    }
+                }, 50);
+            }
+        </script>
+EOF;
+        echo $captchaScript;
+        echo '<div class="precheck-label">行为验证™ 安全组件加载中...</div>';
+
+        // 加载验证码 CDN
+        $captchaChoosen = $config->getCaptchaChoosen();
+        if($captchaChoosen == 'altcha'){
+            echo '<script src="'.$cdnUrl.'" type="module"></script>';
+        } else {
+            echo '<script src="'.$cdnUrl.'"></script>';
+        }
+
+        // Geetest 需要额外配置
+        if($captchaChoosen == 'geetest'){
+            self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig());
+        }
+
+        // Altcha 需要额外配置
+        if($captchaChoosen == 'altcha'){
+            self::echoAltchaContent();
+        }
+    }
+
 }
