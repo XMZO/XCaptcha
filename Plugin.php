@@ -45,9 +45,10 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
             __CLASS__,
             "renderLoginCaptcha",
         ];
-        Typecho_Plugin::factory("Widget_User")->loginSucceed = [
+        // 登录/注册：在 Typecho 核对密码、写入新用户之前校验
+        Typecho_Plugin::factory("index.php")->begin = [
             __CLASS__,
-            "verifyLoginCaptcha",
+            "verifyAuthCaptcha",
         ];
         Typecho_Plugin::factory("XCaptcha")->responseGeetest = [
             __CLASS__,
@@ -84,10 +85,40 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
     public static function personalConfig(Typecho_Widget_Helper_Form $form){}
 
     /**
-     * 验证登陆验证码
+     * 本次请求的登录/注册验证码已经由 verifyAuthCaptcha 校验通过
      */
-    public static function verifyLoginCaptcha()
+    private static $authCaptchaPassed = false;
+
+    /**
+     * 按当前配置的验证工具校验提交上来的验证码
+     */
+    private static function verifySubmission(XCaptcha_Config $config)
     {
+        switch ($config->getCaptchaChoosen()) {
+            case "geetest":
+                return (bool) XCaptcha_Validator::verifyGeetest($config);
+            case "altcha":
+                return XCaptcha_Validator::verifyAltchaSolution($config);
+            default:
+                return (bool) XCaptcha_Validator::verifyOtherCaptcha($config);
+        }
+    }
+
+    /**
+     * 登录/注册验证码，挂在 index.php:begin，早于 Typecho 核对密码和写入新用户。
+     * 失败时不会走到密码校验，也就不会因提示不同而暴露密码是否正确。
+     */
+    public static function verifyAuthCaptcha()
+    {
+        $request = Typecho_Widget::widget("Widget_Options")->request;
+        if (!$request->isPost()) {
+            return;
+        }
+        $pathInfo = rtrim((string) $request->getPathInfo(), "/");
+        if ($pathInfo !== "/action/login" && $pathInfo !== "/action/register") {
+            return;
+        }
+
         $config = new XCaptcha_Config();
         if (!$config->isCaptchaEnabledOnPage("login")) {
             return;
@@ -100,39 +131,36 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
             return;
         }
 
-        if ($config->getCaptchaChoosen() == "geetest") {
-            if (!XCaptcha_Validator::verifyGeetest($config)) {
-                Typecho_Widget::widget("Widget_Notice")->set(
-                    _t("Captcha verification failed."),
-                    "error"
-                );
-                Typecho_Widget::widget("Widget_User")->logout();
-                Typecho_Widget::widget("Widget_Options")->response->goBack();
-                return;
-            }
-            return;
+        if (!self::verifySubmission($config)) {
+            Typecho_Widget::widget("Widget_Notice")->set(
+                _t("Captcha verification failed."),
+                "error"
+            );
+            Typecho_Widget::widget("Widget_Options")->response->goBack();
         }
-        if ($config->getCaptchaChoosen() == "altcha") {
-            if (!XCaptcha_Validator::verifyAltchaSolution($config)) {
-                Typecho_Widget::widget("Widget_Notice")->set(
-                    _t("Captcha verification failed."),
-                    "error"
-                );
-                Typecho_Widget::widget("Widget_User")->logout();
-                Typecho_Widget::widget("Widget_Options")->response->goBack();
-                return;
-            }
-            return;
-        }
+        self::$authCaptchaPassed = true;
+    }
 
-        if (!XCaptcha_Validator::verifyOtherCaptcha($config)) {
+    /**
+     * 旧版挂在 Widget_User::loginSucceed（密码核对之后）。重新启用插件后不再挂这个钩子；
+     * 没重新启用的站点仍会调到这里，保持旧行为兜底，新钩子已校验过则跳过。
+     */
+    public static function verifyLoginCaptcha()
+    {
+        if (self::$authCaptchaPassed) {
+            return;
+        }
+        $config = new XCaptcha_Config();
+        if (!$config->isCaptchaEnabledOnPage("login") || !$config->checkKeys()) {
+            return;
+        }
+        if (!self::verifySubmission($config)) {
             Typecho_Widget::widget("Widget_Notice")->set(
                 _t("Captcha verification failed."),
                 "error"
             );
             Typecho_Widget::widget("Widget_User")->logout();
             Typecho_Widget::widget("Widget_Options")->response->goBack();
-            return;
         }
     }
 
@@ -166,33 +194,14 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
             return $comment;
         }
 
-        // 如果是Geetest v3
-        if ($config->getCaptchaChoosen() == "geetest") {
-            if (!XCaptcha_Validator::verifyGeetest($config)) {
-                throw new Typecho_Widget_Exception(
-                    _t("Geetest:Invalid verification code.")
-                );
-                return;
-            }
-            return $comment;
-        }
-
-        if ($config->getCaptchaChoosen() == "altcha") {
-            if (!XCaptcha_Validator::verifyAltchaSolution($config)) {
-                throw new Typecho_Widget_Exception(
-                    _t("Altcha:Invalid verification code.")
-                );
-                return;
-            }
-            return $comment;
-        }
-
-        // 其他验证码
-        if (!XCaptcha_Validator::verifyOtherCaptcha($config)) {
+        if (!self::verifySubmission($config)) {
+            $messages = [
+                "geetest" => "Geetest:Invalid verification code.",
+                "altcha" => "Altcha:Invalid verification code.",
+            ];
             throw new Typecho_Widget_Exception(
-                _t("Invalid verification code.")
+                _t($messages[$config->getCaptchaChoosen()] ?? "Invalid verification code.")
             );
-            return;
         }
         return $comment;
     }
@@ -260,25 +269,24 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
         $algorithm = \AltchaOrg\Altcha\Altcha::DEFAULT_ALGORITHM; // 使用默认算法 SHA-256
         $maxNumber = 40000; // 最大数字范围
         $saltLength = 12; // Salt 长度
-    
-        // 创建挑战选项
+        $expires = time() + XCaptcha_Validator::ALTCHA_TTL;
+
+        // 创建挑战选项；expires 写进 salt，组件到期会自己变成「已过期」
         $options = [
             "algorithm" => $algorithm,
             "maxNumber" => $maxNumber,
             "saltLength" => $saltLength,
             "hmacKey" => $hmacKey,
+            "expires" => (new DateTime())->setTimestamp($expires),
         ];
-    
+
         // 生成挑战
         $challenge = \AltchaOrg\Altcha\Altcha::createChallenge($options);
-    
-        // 将挑战信息和 hmacKey 存储到 Session 中
+
+        // 一个页面上可能同时有评论、登录、注册几个组件，按题目分别存，互不覆盖
         @session_start();
-        $_SESSION["altcha_challenge"] = $challenge->challenge;
-        $_SESSION["altcha_signature"] = $challenge->signature;
-        $_SESSION["altcha_salt"] = $challenge->salt;
-        $_SESSION["altcha_hmac_key"] = $hmacKey; // 存储 hmacKey
-    
+        XCaptcha_Validator::storeAltchaChallenge($challenge->challenge, $hmacKey, $expires);
+
         // 返回挑战信息给客户端
         $response = [
             "algorithm" => $challenge->algorithm,

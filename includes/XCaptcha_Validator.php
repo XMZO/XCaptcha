@@ -9,6 +9,37 @@ include_once 'XCaptcha_Utils.php';
  */
 class XCaptcha_Validator
 {
+    /** Altcha 题目有效期（秒），写评论可能要一阵子，给宽一点 */
+    const ALTCHA_TTL = 1800;
+
+    /** 每个会话最多同时保留的未用题目数，防止反复刷题撑大 session */
+    const ALTCHA_MAX_PENDING = 20;
+
+    /** Session 中保存 Altcha 题目的键：challenge => [hmacKey, expires] */
+    const ALTCHA_SESSION_KEY = 'xcaptcha_altcha';
+
+    /**
+     * 保存一道刚出的 Altcha 题目（调用前需已 session_start）
+     * @static
+     * @param string $challenge 题目哈希
+     * @param string $hmacKey   这道题的签名密钥
+     * @param int    $expires   过期时间戳
+     */
+    public static function storeAltchaChallenge($challenge, $hmacKey, $expires)
+    {
+        $now = time();
+        $pending = $_SESSION[self::ALTCHA_SESSION_KEY] ?? [];
+        if (!is_array($pending)) {
+            $pending = [];
+        }
+        $pending = array_filter($pending, function ($entry) use ($now) {
+            return is_array($entry) && ($entry['expires'] ?? 0) >= $now;
+        });
+        $pending[$challenge] = ['key' => $hmacKey, 'expires' => $expires];
+        // 超出上限时丢掉最早出的题（数组按插入顺序）
+        $_SESSION[self::ALTCHA_SESSION_KEY] = array_slice($pending, -self::ALTCHA_MAX_PENDING, null, true);
+    }
+
     /**
      * 极验证二次校验
      * @param Widget_Options::plugin $filter XCaptcha插件对象
@@ -49,28 +80,26 @@ class XCaptcha_Validator
     public static function verifyAltchaSolution(XCaptcha_Config $config){
 
         require_once dirname(__DIR__) . "/lib/class.altcha.php";
-        // 从 Session 中获取挑战信息和 hmacKey
-        @session_start();
-        $challenge = $_SESSION['altcha_challenge'] ?? null;
-        $signature = $_SESSION['altcha_signature'] ?? null;
-        $salt = $_SESSION['altcha_salt'] ?? null;
-        $hmacKey = $_SESSION['altcha_hmac_key'] ?? null;
-        if (!$challenge || !$signature || !$salt || !$hmacKey) {
-            return false; // 挑战信息或 hmacKey 不存在
+
+        $payload = $_POST['altcha'] ?? '';
+        if (!is_string($payload) || $payload === '') {
+            return false;
         }
-        $userSolution = $_POST['altcha'] ?? null;
-        // 构造验证数据
-        $payload = $userSolution;
-        // 验证解决方案
-        $isValid = \AltchaOrg\Altcha\Altcha::verifySolution($payload, $hmacKey);
+        $decoded = json_decode((string) base64_decode($payload, true), true);
+        $challenge = is_array($decoded) ? ($decoded['challenge'] ?? null) : null;
+        if (!is_string($challenge)) {
+            return false;
+        }
 
-        // 清除 Session 中的挑战信息和 hmacKey
-        unset($_SESSION['altcha_challenge']);
-        unset($_SESSION['altcha_signature']);
-        unset($_SESSION['altcha_salt']);
-        unset($_SESSION['altcha_hmac_key']);
+        // 只认本会话出过、还没用过的题；无论对错都作废，一题只能交一次
+        @session_start();
+        $entry = $_SESSION[self::ALTCHA_SESSION_KEY][$challenge] ?? null;
+        unset($_SESSION[self::ALTCHA_SESSION_KEY][$challenge]);
+        if (!is_array($entry) || ($entry['expires'] ?? 0) < time()) {
+            return false;
+        }
 
-        return $isValid;
+        return \AltchaOrg\Altcha\Altcha::verifySolution($payload, $entry['key']);
     }
 
 

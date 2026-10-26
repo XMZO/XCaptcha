@@ -16,7 +16,7 @@ class XCaptcha_Render
     {
         echo <<<EOF
         <style rel="stylesheet">
-        .precheck-label { line-height: 44px;text-align:center;background-color: #e8e8e8; color: #4d4d4d; }
+        .precheck-label { line-height: 44px;text-align:center;background-color: rgba(128,128,128,.12); color: inherit; }
         </style>
         <script>
             window.beforeCheckCallback = () => {
@@ -118,15 +118,9 @@ EOF;
             echo '<div class="precheck-label">行为验证™ 安全组件加载中...</div>';
 
         }   
-        if($captchaChoosen == 'altcha'){
-            echo<<<EOF
-            <script src="$cdnUrl" type="module"></script>
-EOF;
-        }else{
-                echo<<<EOF
+        echo<<<EOF
         <script src="$cdnUrl"></script>
 EOF;
-        }
     }
 
     /**
@@ -190,47 +184,137 @@ EOF;
 
     }
 
-    private static function echoAltchaContent(){
-        echo<<<EOF
-        <script>
-            // 延迟调用，等待 Altcha 组件渲染完成
-            setTimeout(() => {
-                window.beforeCheckCallback && window.beforeCheckCallback();
-            }, 500);
+    /**
+     * 生成页面内唯一的 Altcha 组件 id。
+     * 主题（如 handsome）会在一个页面里同时放评论、登录、注册三个组件，
+     * PJAX 换进来的片段又来自另一次请求，所以用随机 id 而不是计数器。
+     */
+    private static function newAltchaWidgetId()
+    {
+        return 'xcaptcha-altcha-' . bin2hex(random_bytes(4));
+    }
 
-            (function() {
-                var listenerRegistered = false;
-                var retryCount = 0;
-                var maxRetries = 10;
-
-                function registerAltchaListener() {
-                    if (listenerRegistered) return;
-
-                    const altchaElement = document.querySelector('#altcha');
-                    if (altchaElement) {
-                        // 确保加载提示被隐藏
-                        window.beforeCheckCallback && window.beforeCheckCallback();
-
-                        altchaElement.addEventListener('statechange', function(ev) {
-                            if (ev.detail.state === 'verified') {
-                                window.checkCallback && window.checkCallback();
-                            }
-                        });
-                        listenerRegistered = true;
-                    } else if (retryCount < maxRetries) {
-                        retryCount++;
-                        setTimeout(registerAltchaListener, 1000);
-                    }
-                }
-
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', registerAltchaListener);
-                } else {
-                    registerAltchaListener();
-                }
-            })();
-            </script>
+    /**
+     * 输出 Altcha 的样式、组件脚本和绑定函数（重复输出无害：脚本按 URL 去重，绑定函数只定义一次）
+     * @param string $cdnUrl 组件脚本地址
+     */
+    private static function echoAltchaRuntime($cdnUrl)
+    {
+        $src = htmlspecialchars($cdnUrl, ENT_QUOTES);
+        // 颜色跟随页面文字色，深色模式下不再是一块白底
+        echo <<<EOF
+        <style>
+        .precheck-label { line-height: 44px;text-align:center;background-color: rgba(128,128,128,.12); color: inherit; }
+        altcha-widget { --altcha-color-base: transparent; --altcha-color-text: currentColor; --altcha-color-border: rgba(128,128,128,.35); --altcha-color-footer-bg: transparent; }
+        </style>
+        <script src="$src" type="module"></script>
 EOF;
+        echo <<<'EOF'
+        <script>
+        window.XCaptchaAltcha = window.XCaptchaAltcha || (function () {
+            function absolute(url) {
+                try { return new URL(url, location.href).href; } catch (e) { return String(url); }
+            }
+
+            // 只管自己所在的表单：gate 是该表单里「验证通过前禁用」的按钮选择器，留空则不禁用
+            function bind(id, gate) {
+                var widget = document.getElementById(id);
+                if (!widget || widget.getAttribute('data-xcaptcha-bound')) return;
+                widget.setAttribute('data-xcaptcha-bound', '1');
+                var form = widget.closest('form');
+
+                var verified = false;
+                function setGate(open) {
+                    if (!form || !gate) return;
+                    var buttons = form.querySelectorAll(gate);
+                    for (var i = 0; i < buttons.length; i++) buttons[i].disabled = !open;
+                }
+                // 渲染时立即禁用，PJAX 换入的片段此时按钮已在；整页加载时按钮可能还在后面没解析到，解析完再补一次
+                setGate(false);
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', function () { setGate(verified); });
+                }
+                widget.addEventListener('statechange', function (ev) {
+                    verified = !!ev.detail && ev.detail.state === 'verified';
+                    setGate(verified);
+                });
+
+                if (window.customElements) {
+                    customElements.whenDefined('altcha-widget').then(function () {
+                        var label = document.getElementById(id + '-precheck');
+                        if (label) label.style.display = 'none';
+                    });
+                }
+
+                // 一道题只能交一次：这个表单的 AJAX 提交（handsome 的评论、登录）回来后重新出题
+                function watchAjax() {
+                    if (!window.jQuery) return false;
+                    jQuery(document).ajaxComplete(function (event, xhr, settings) {
+                        if (!widget.isConnected || typeof widget.reset !== 'function') return;
+                        var action = form.getAttribute('action');
+                        if (action && absolute(settings.url) === absolute(action)) widget.reset();
+                    });
+                    return true;
+                }
+                // 主题可能把 jQuery 放在页面底部，那就等解析完再挂
+                if (form && !watchAjax() && document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', watchAjax);
+                }
+            }
+
+            return { bind: bind };
+        })();
+        </script>
+EOF;
+    }
+
+    /**
+     * 在表单里原地输出一个 Altcha 组件并绑定
+     * @param XCaptcha_Config $config 配置类
+     * @param string          $gate   验证通过前禁用的按钮选择器，留空不禁用
+     */
+    private static function echoAltchaWidget(XCaptcha_Config $config, $gate)
+    {
+        $id = self::newAltchaWidgetId();
+        list($widgetHtml, $cdnUrl) = XCaptcha_Utils::getCaptchaScript(
+            'altcha',
+            $config->getCdnUrl(),
+            $config->getWidgetColor(),
+            $config->getwidgetSize(),
+            $config->getCaptchaId(),
+            $id
+        );
+
+        self::echoAltchaRuntime($cdnUrl);
+        echo $widgetHtml;
+        echo '<div class="precheck-label" id="' . $id . '-precheck">行为验证™ 安全组件加载中...</div>';
+        echo '<script>XCaptchaAltcha.bind(' . json_encode($id) . ', ' . json_encode($gate) . ');</script>';
+    }
+
+    /**
+     * 后台登录/注册页：表单不在插件手里，用 jQuery 插到提交按钮前面再绑定
+     * @param XCaptcha_Config $config 配置类
+     */
+    private static function echoAltchaLoginPage(XCaptcha_Config $config)
+    {
+        $id = self::newAltchaWidgetId();
+        list($widgetHtml, $cdnUrl) = XCaptcha_Utils::getCaptchaScript(
+            'altcha',
+            $config->getCdnUrl(),
+            $config->getWidgetColor(),
+            $config->getwidgetSize(),
+            $config->getCaptchaId(),
+            $id
+        );
+        $html = $widgetHtml . '<div class="precheck-label" id="' . $id . '-precheck">行为验证™ 安全组件加载中...</div>';
+        $flags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE;
+
+        self::echoAltchaRuntime($cdnUrl);
+        echo '<script>$(function () {'
+            . 'var submit = $("form").first().find(":submit").first();'
+            . 'submit.parent().before(' . json_encode($html, $flags) . ');'
+            . 'XCaptchaAltcha.bind(' . json_encode($id) . ', "button[type=submit], input[type=submit]");'
+            . '});</script>';
     }
 
     /**
@@ -256,6 +340,11 @@ EOF;
 			return;
         }
 
+        if($config->getCaptchaChoosen() == 'altcha'){
+            self::echoAltchaLoginPage($config);
+            return;
+        }
+
         list($captchaScript, $cdnUrl) = XCaptcha_Utils::getCaptchaScript(
             $config->getCaptchaChoosen(),
             $config->getCdnUrl(),
@@ -269,9 +358,6 @@ EOF;
         if($config->getCaptchaChoosen() == 'geetest'){
             // geetest需要额外配置
             self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig());
-        }
-        if($config->getCaptchaChoosen() == 'altcha'){
-            self::echoAltchaContent();
         }
     }
 
@@ -296,6 +382,12 @@ EOF;
         if($config->isAuthorUncheck() && $user->hasLogin() && $user->pass('administrator', true))
             return;
 
+        if($config->getCaptchaChoosen() == 'altcha'){
+            // 主题需给评论提交按钮加 custom-submit-button，验证通过前禁用
+            self::echoAltchaWidget($config, '.custom-submit-button');
+            return;
+        }
+
         list($captchaScript, $cdnUrl) = XCaptcha_Utils::getCaptchaScript(
             $config->getCaptchaChoosen(),
             $config->getCdnUrl(),
@@ -309,9 +401,6 @@ EOF;
         if($config->getCaptchaChoosen() == 'geetest'){
             // geetest需要额外配置
             self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig());
-        }
-        if($config->getCaptchaChoosen() == 'altcha'){
-            self::echoAltchaContent();
         }
     }
 
@@ -328,6 +417,12 @@ EOF;
         }
         // 密钥是否为空，如果为空则不渲染验证码
         if(!$config->checkKeys()){
+            return;
+        }
+
+        if($config->getCaptchaChoosen() == 'altcha'){
+            // 登录/注册按钮不禁用，组件自带的必填勾选框会拦住未验证的提交
+            self::echoAltchaWidget($config, '');
             return;
         }
 
@@ -361,20 +456,11 @@ EOF;
 
         // 加载验证码 CDN
         $captchaChoosen = $config->getCaptchaChoosen();
-        if($captchaChoosen == 'altcha'){
-            echo '<script src="'.$cdnUrl.'" type="module"></script>';
-        } else {
-            echo '<script src="'.$cdnUrl.'"></script>';
-        }
+        echo '<script src="'.$cdnUrl.'"></script>';
 
         // Geetest 需要额外配置
         if($captchaChoosen == 'geetest'){
             self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig());
-        }
-
-        // Altcha 需要额外配置
-        if($captchaChoosen == 'altcha'){
-            self::echoAltchaContent();
         }
     }
 
