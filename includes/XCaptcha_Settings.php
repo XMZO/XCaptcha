@@ -8,7 +8,7 @@
 class XCaptcha_Settings
 {
     /** 插件版本，和 Plugin.php 头部的 @version 一致 */
-    const VERSION = '1.5.0';
+    const VERSION = '1.5.1';
 
     /** 新设置页所在的后台菜单：4 = 设置 */
     const PANEL_MENU = 4;
@@ -87,6 +87,10 @@ class XCaptcha_Settings
         $values = [];
         foreach (self::fields() as $name => $spec) {
             $values[$name] = isset($stored[$name]) ? $stored[$name] : $spec['default'];
+        }
+        // 没填或还是旧的默认邮件模板时，设置页上显示新的默认模板，保存时一并换掉
+        if (trim((string) $values['passportMailTemplate']) === '' || XCaptcha_Config::isLegacyMailTemplate($values['passportMailTemplate'])) {
+            $values['passportMailTemplate'] = XCaptcha_Config::defaultMailTemplate();
         }
         return $values;
     }

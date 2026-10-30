@@ -103,12 +103,89 @@ class XCaptcha_Config{
      */
     public static function defaultMailTemplate()
     {
-        return '<h3>{username}，您好：</h3>
+        // 邮件客户端对 CSS 支持很差：表格排版、样式写在标签上、不用图片；
+        // 按钮是带底色的单元格里放链接（Outlook 也能点），下面再给一份可复制的完整链接
+        return <<<'HTML'
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>重置密码</title>
+<style>
+@media (prefers-color-scheme: dark) {
+  body, .xc-page { background: #17191c !important; }
+  .xc-brand { color: #8cc3dd !important; }
+  .xc-card { background: #202327 !important; border-color: #33373d !important; }
+  .xc-title { color: #f0f2f4 !important; }
+  .xc-text { color: #c9ced4 !important; }
+  .xc-muted, .xc-muted a { color: #9aa1a9 !important; }
+  .xc-linkbox { background: #17191c !important; border-color: #33373d !important; }
+  .xc-linkbox a { color: #8cc3dd !important; }
+  .xc-rule { border-color: #33373d !important; }
+}
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f4f5f7;">
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">{username}，点邮件里的按钮重置你在 {sitename} 的密码，{expireMinutes} 分钟内有效。</div>
+<table role="presentation" class="xc-page" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f5f7;">
+<tr><td align="center" style="padding:32px 12px;">
+<table role="presentation" class="xc-card" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border:1px solid #e3e5e8;border-radius:12px;">
+<tr><td style="padding:28px 32px 4px;font-family:-apple-system,'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;">
+<a class="xc-brand" href="{siteUrl}" target="_blank" style="color:#467B96;font-size:15px;font-weight:600;text-decoration:none;">{sitename}</a>
+<h1 class="xc-title" style="margin:14px 0 0;font-size:22px;line-height:1.4;font-weight:700;color:#1f2328;">重置你的密码</h1>
+</td></tr>
+<tr><td class="xc-text" style="padding:12px 32px 0;font-family:-apple-system,'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;font-size:15px;line-height:1.75;color:#3d434a;">
+<p style="margin:0 0 12px;">{username}，你好：</p>
+<p style="margin:0;">我们在 {requestTime} 收到了重置你在 {sitename} 的账号密码的申请。点下面的按钮设置新密码，链接 <strong>{expireMinutes} 分钟</strong>内有效，只能用一次。</p>
+</td></tr>
+<tr><td style="padding:24px 32px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td align="center" bgcolor="#467B96" style="border-radius:8px;">
+<a href="{resetLink}" target="_blank" style="display:inline-block;padding:13px 30px;font-family:-apple-system,'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;font-size:16px;font-weight:600;line-height:1.2;color:#ffffff;text-decoration:none;border-radius:8px;">设置新密码</a>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="xc-muted" style="padding:0 32px 24px;font-family:-apple-system,'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;font-size:13px;line-height:1.7;color:#5b626b;">
+<p style="margin:0 0 6px;">按钮点不了？复制下面的链接，粘贴到浏览器地址栏打开：</p>
+<p class="xc-linkbox" style="margin:0;padding:10px 12px;background:#f6f8fa;border:1px solid #e3e5e8;border-radius:6px;word-break:break-all;word-wrap:break-word;overflow-wrap:anywhere;font-family:Menlo,Consolas,monospace;font-size:12px;line-height:1.6;"><a href="{resetLink}" target="_blank" style="color:#3A6880;text-decoration:underline;">{resetLink}</a></p>
+</td></tr>
+<tr><td class="xc-muted xc-rule" style="padding:16px 32px 28px;border-top:1px solid #edeef0;font-family:-apple-system,'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;font-size:12px;line-height:1.7;color:#6b7178;">
+如果这不是你本人的操作，请忽略这封邮件，你的密码不会改变。<br>
+本次申请来自 IP：{ip}
+</td></tr>
+</table>
+<p class="xc-muted" style="margin:16px 0 0;font-family:-apple-system,'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;font-size:12px;line-height:1.6;color:#6b7178;">这是一封自动发送的邮件，请不要直接回复 · <a href="{siteUrl}" target="_blank" style="color:#6b7178;">{sitename}</a></p>
+</td></tr>
+</table>
+</body>
+</html>
+HTML;
+    }
+
+    /**
+     * 1.4.0、1.5.0 的默认模板（几行文字加一个链接）。还在用它的站点自动换成新的默认模板；改过的模板不动
+     */
+    const LEGACY_MAIL_TEMPLATE = '<h3>{username}，您好：</h3>
 <p>您于 {requestTime} 在 {sitename} 申请了重置密码。</p>
 <p>请在 {expireMinutes} 分钟内打开下面的链接设置新密码：</p>
 <p><a href="{resetLink}">{resetLink}</a></p>
 <hr/>
 <p>如果这不是您本人的操作，请忽略本邮件，您的密码不会改变。本次申请来自 IP：{ip}</p>';
+
+    /**
+     * 存着的模板是不是旧的默认模板（忽略换行符差异和首尾空白）
+     * @param string $template
+     * @return boolean
+     */
+    public static function isLegacyMailTemplate($template)
+    {
+        $normalize = function ($text) {
+            return trim(str_replace("\r\n", "\n", (string) $text));
+        };
+        return $normalize($template) === $normalize(self::LEGACY_MAIL_TEMPLATE);
     }
 
     /**
@@ -405,7 +482,7 @@ EOF;
     public function getPassportMailTemplate()
     {
         $template = (string) $this->opt('passportMailTemplate', '');
-        return trim($template) === '' ? self::defaultMailTemplate() : $template;
+        return trim($template) === '' || self::isLegacyMailTemplate($template) ? self::defaultMailTemplate() : $template;
     }
 
     /**

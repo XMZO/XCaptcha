@@ -262,10 +262,13 @@ class XCaptcha_Passport extends Typecho_Widget
         }
 
         $body = strtr($this->config->getPassportMailTemplate(), $escaped);
-        $plain = XCaptcha_Mailer::toText($body);
-        if (strpos($plain, $link) === false) {
-            $plain .= "\n\n" . $link;
-        }
+        // 纯文本版给不显示 HTML 的邮箱看；模板是表格排版，从 HTML 去标签会很乱，所以单独写
+        $plain = strtr("{username}，你好：\n\n"
+            . "我们在 {requestTime} 收到了重置你在 {sitename} 的账号密码的申请。"
+            . "请在 {expireMinutes} 分钟内打开下面的链接设置新密码，链接只能用一次：\n\n"
+            . "{resetLink}\n\n"
+            . "如果这不是你本人的操作，请忽略这封邮件，你的密码不会改变。\n"
+            . "本次申请来自 IP：{ip}\n", $raw);
         if ($smtp['fromName'] === '') {
             $smtp['fromName'] = $siteName;
         }
