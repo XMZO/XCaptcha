@@ -1,0 +1,176 @@
+/* XCaptcha 设置页（panel.php）。配色沿用 Typecho 后台：底色 #F6F6F3、主色 #467B96 */
+.xc {
+    --xc-card: #FFFFFF;
+    --xc-line: #E3E3DE;
+    --xc-line-soft: #EDEDE8;
+    --xc-subtle: #FAFAF8;
+    --xc-text: #2B2B28;
+    --xc-muted: #66665F;
+    --xc-input: #CFCFC9;
+    --xc-accent: #467B96;
+    --xc-accent-text: #3A6880;
+    --xc-accent-soft: #E8F0F4;
+    --xc-ok: #2F6B2F;
+    --xc-ok-soft: #E8F3E3;
+    --xc-warn: #6F5420;
+    --xc-warn-soft: #FCF5DD;
+    --xc-danger: #B23A38;
+    --xc-danger-soft: #FBEAEA;
+    --xc-off: #B9B9B3;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px 40px;
+    box-sizing: border-box;
+    color: var(--xc-text);
+    font-size: 14px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+.xc *, .xc *::before, .xc *::after { box-sizing: border-box; }
+.xc [hidden] { display: none !important; }
+.xc a { color: var(--xc-accent-text); }
+.xc :focus-visible { outline: 2px solid var(--xc-accent); outline-offset: 2px; }
+
+/* 标题和状态 */
+.xc-head { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.xc-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.xc-title h1 { margin: 0; font-size: 22px; font-weight: 650; color: #292D33; }
+.xc-badge { font-size: 12px; font-weight: 600; color: var(--xc-accent-text); background: var(--xc-accent-soft); border-radius: 999px; padding: 1px 9px; }
+.xc-status { display: flex; flex-wrap: wrap; gap: 8px; }
+.xc-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--xc-card); border: 1px solid var(--xc-line); }
+.xc-chip.is-danger { background: var(--xc-danger-soft); border-color: transparent; color: var(--xc-danger); }
+.xc-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--xc-off); }
+.xc-dot.is-ok { background: var(--xc-ok); }
+.xc-dot.is-warn { background: #B07D12; }
+.xc-dot.is-danger { background: var(--xc-danger); }
+
+/* 左侧标签（手机上变成顶部按钮格） */
+.xc-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; align-items: start; }
+.xc-tabs { display: flex; flex-direction: column; gap: 6px; }
+.xc-tabs a { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--xc-line); background: var(--xc-card); color: var(--xc-text); text-decoration: none; }
+.xc-tabs a:hover { border-color: var(--xc-accent); text-decoration: none; }
+.xc-tabs a[aria-selected="true"] { border-color: var(--xc-accent); background: var(--xc-accent-soft); color: var(--xc-accent-text); font-weight: 600; }
+.xc-panels { min-width: 0; }
+.xc-stack { display: flex; flex-direction: column; gap: 16px; }
+
+/* 卡片 */
+.xc-card { background: var(--xc-card); border: 1px solid var(--xc-line); border-radius: 12px; overflow: hidden; }
+/* 用 gap 而不是相邻选择器：隐藏的卡片不占间距 */
+#xc-form { display: flex; flex-direction: column; gap: 16px; }
+.xc-card-head { padding: 16px 18px 12px; }
+.xc-card-head h2 { margin: 0; font-size: 17px; font-weight: 650; color: #292D33; }
+.xc-card-head p { margin: 2px 0 0; color: var(--xc-muted); font-size: 13px; }
+.xc-row-like { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; }
+.xc-row-like > div { flex: 1 1 200px; min-width: 0; }
+.xc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 18px; border-top: 1px solid var(--xc-line-soft); }
+.xc-row > .xc-row-label, .xc-row > .xc-row-text { flex: 999 1 200px; min-width: 0; }
+.xc-row-text { display: flex; flex-direction: column; gap: 2px; }
+.xc-row-label { font-weight: 600; }
+.xc-row .xc-error { flex-basis: 100%; }
+.xc-block { padding: 12px 18px; border-top: 1px solid var(--xc-line-soft); }
+.xc-block > .xc-row-label { display: block; margin-bottom: 8px; }
+.xc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.xc-wide { grid-column: 1 / -1; }
+.xc-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--xc-line-soft); background: var(--xc-subtle); }
+.xc-saved { margin-right: auto; min-width: 0; font-size: 13px; }
+.xc-saved.is-ok { color: var(--xc-ok); }
+.xc-saved.is-error { color: var(--xc-danger); }
+
+/* 字段 */
+.xc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.xc-field > label { font-weight: 600; }
+.xc input[type=text], .xc input[type=url], .xc input[type=email], .xc input[type=password], .xc input[type=number], .xc select, .xc textarea {
+    width: 100%; min-height: 40px; padding: 0 10px; border: 1px solid var(--xc-input); border-radius: 8px; background: #FFFFFF; color: var(--xc-text); font: inherit; height: auto;
+}
+.xc textarea { padding: 8px 10px; min-height: 120px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.6; resize: vertical; }
+.xc input.xc-num { width: 72px; min-height: 34px; padding: 0 6px; text-align: right; border-radius: 6px; }
+.xc-row > .xc-inline { flex: none; }
+.xc-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.xc-inline-field { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.xc-inline-field input { flex: 1 1 220px; }
+.xc-hint { margin: 0; color: var(--xc-muted); font-size: 13px; font-weight: 400; }
+.xc-error { margin: 0; color: var(--xc-danger); font-size: 13px; }
+.xc .is-invalid { border-color: var(--xc-danger) !important; }
+.xc-note { margin: 0; padding: 10px 18px; border-top: 1px solid var(--xc-line-soft); color: var(--xc-muted); font-size: 13px; }
+.xc-grid > .xc-note { padding: 0; border: 0; }
+.xc-note.is-warn { background: var(--xc-warn-soft); color: var(--xc-warn); }
+.xc-note.is-accent { background: var(--xc-accent-soft); color: var(--xc-text); }
+.xc-url { display: block; font-size: 13px; }
+.xc-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* 开关 */
+.xc-switch { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 44px; }
+.xc-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.xc-switch-track { width: 44px; height: 26px; padding: 3px; border-radius: 13px; background: var(--xc-off); transition: background .15s; pointer-events: none; }
+.xc-switch-track::after { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #FFFFFF; transition: transform .15s; }
+.xc-switch input:checked + .xc-switch-track { background: var(--xc-accent); }
+.xc-switch input:checked + .xc-switch-track::after { transform: translateX(18px); }
+.xc-switch input:focus-visible + .xc-switch-track { outline: 2px solid var(--xc-accent); outline-offset: 2px; }
+
+/* 胶囊多选、分段单选、工具卡片：真实的 input 叠在上面，样式跟着 :checked 走 */
+.xc-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.xc-pill { position: relative; display: inline-flex; }
+.xc-pill input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.xc-pill span { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--xc-input); background: #FFFFFF; pointer-events: none; }
+.xc-pill input:checked + span { border-color: var(--xc-accent); background: var(--xc-accent-soft); color: var(--xc-accent-text); }
+.xc-pill input:checked + span::before { content: ""; width: 10px; height: 6px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(-45deg); }
+.xc-pill input:focus-visible + span { outline: 2px solid var(--xc-accent); outline-offset: 2px; }
+
+.xc-seg { display: inline-flex; flex-wrap: wrap; padding: 3px; gap: 3px; border-radius: 10px; background: #F1F1EC; }
+.xc-seg label { position: relative; display: inline-flex; }
+.xc-seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.xc-seg span { display: inline-flex; align-items: center; min-height: 38px; padding: 0 12px; border-radius: 7px; color: var(--xc-muted); pointer-events: none; }
+.xc-seg input:checked + span { background: #FFFFFF; color: var(--xc-text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+.xc-seg input:focus-visible + span { outline: 2px solid var(--xc-accent); outline-offset: 1px; }
+
+.xc-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.xc-tile { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 60px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--xc-line); background: #FFFFFF; cursor: pointer; min-width: 0; }
+.xc-tile input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.xc-tile-name { font-weight: 600; pointer-events: none; }
+.xc-tile-note { font-size: 12px; color: var(--xc-muted); pointer-events: none; }
+.xc-tile.is-checked, .xc-tile:has(input:checked) { border-color: var(--xc-accent); background: var(--xc-accent-soft); }
+.xc-tile:has(input:focus-visible) { outline: 2px solid var(--xc-accent); outline-offset: 2px; }
+
+/* 按钮 */
+.xc-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--xc-input); background: #FFFFFF; color: var(--xc-text); font: inherit; cursor: pointer; white-space: nowrap; }
+.xc-btn:hover { border-color: var(--xc-accent); }
+.xc-btn:disabled { opacity: .6; cursor: progress; }
+.xc-btn.xc-primary { min-height: 44px; padding: 0 22px; border: 0; background: var(--xc-accent); color: #FFFFFF; font-weight: 600; }
+.xc-btn.xc-primary:hover { background: #3A6880; }
+.xc-btn.xc-danger { min-height: 36px; border-color: var(--xc-danger); color: var(--xc-danger); }
+.xc-code { min-height: 30px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--xc-line); background: var(--xc-subtle); color: var(--xc-text); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; cursor: pointer; }
+.xc-link { min-height: 30px; padding: 0 6px; border: 0; background: none; color: var(--xc-accent-text); text-decoration: underline; font: inherit; font-size: 13px; cursor: pointer; }
+.xc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* 检测结果 */
+.xc-result { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.xc-result:empty { display: none; }
+.xc-tag { display: inline-block; max-width: 100%; border-radius: 999px; padding: 2px 9px; font-size: 12px; background: #F1F1EC; color: #55554F; }
+.xc-tag.is-ok { background: var(--xc-ok-soft); color: var(--xc-ok); }
+.xc-tag.is-warn { background: var(--xc-warn-soft); color: var(--xc-warn); }
+.xc-tag.is-danger { background: var(--xc-danger-soft); color: var(--xc-danger); }
+.xc-tag.is-accent { background: var(--xc-accent-soft); color: var(--xc-accent-text); }
+.xc-tag.is-muted { background: #F1F1EC; color: #55554F; }
+
+/* 记录列表 */
+.xc-list { list-style: none; margin: 0; padding: 0; }
+.xc-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 18px; border-top: 1px solid var(--xc-line-soft); }
+.xc-list-main { flex: 1 1 160px; min-width: 0; }
+.xc-list-meta { flex: 999 1 220px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; color: var(--xc-muted); }
+.xc-empty { margin: 0; padding: 14px 18px; border-top: 1px solid var(--xc-line-soft); color: var(--xc-muted); }
+
+@media (max-width: 760px) {
+    .xc { padding: 16px 12px 32px; }
+    .xc-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .xc-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .xc-tabs a { justify-content: center; padding: 0 8px; }
+    .xc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+    .xc-grid { grid-template-columns: minmax(0, 1fr); }
+    .xc-card-head, .xc-row, .xc-block, .xc-foot, .xc-note, .xc-list li, .xc-empty { padding-left: 14px; padding-right: 14px; }
+    .xc-foot .xc-btn { flex: 1 1 auto; }
+    /* 提示单独占一行；没有提示时高度为 0，并抵掉行间距 */
+    .xc-saved { flex: 1 1 100%; margin: 0; }
+    .xc-saved:empty { margin-bottom: -10px; }
+}

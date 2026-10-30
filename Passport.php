@@ -18,12 +18,22 @@ class XCaptcha_Passport extends Typecho_Widget
     /** 数据表（不含前缀） */
     const TABLE_TOKENS = 'password_reset_tokens';
     const TABLE_FAILS = 'passport_fails';
+    const TABLE_LOG = 'xcaptcha_passport_log';
 
     /** 频率限制的统计窗口（秒）：这么久没再提交就从头计数 */
     const FAIL_WINDOW = 600;
 
-    /** 频率限制记录保留天数 */
+    /** 频率限制记录、申请记录保留天数 */
     const FAIL_KEEP_DAYS = 30;
+
+    /** 申请记录的事件 */
+    const EVENT_SENT = 'sent';
+    const EVENT_COOLDOWN = 'cooldown';
+    const EVENT_NOMATCH = 'nomatch';
+    const EVENT_MAIL_FAILED = 'mail_failed';
+    const EVENT_CAPTCHA_FAILED = 'captcha_failed';
+    const EVENT_RATE_LOCKED = 'rate_locked';
+    const EVENT_RESET = 'reset';
 
     /** 新密码最长字节数，再长没有意义，还会拖慢哈希 */
     const PASSWORD_MAX_LENGTH = 256;
@@ -159,6 +169,7 @@ class XCaptcha_Passport extends Typecho_Widget
         $user = $this->findUser($account);
         if (!$user) {
             error_log('XCaptcha: 找回密码申请没有匹配的账号，未发信');
+            $this->log(self::EVENT_NOMATCH);
             return;
         }
 
@@ -169,6 +180,7 @@ class XCaptcha_Passport extends Typecho_Widget
                 ->where('uid = ? AND created_at > ?', $user['uid'], $now - $cooldown)->limit(1));
             if ($recent) {
                 error_log('XCaptcha: 找回密码 uid=' . $user['uid'] . ' 还在发信冷却期内，未重复发信');
+                $this->log(self::EVENT_COOLDOWN, $user['uid']);
                 return;
             }
         }
@@ -188,9 +200,11 @@ class XCaptcha_Passport extends Typecho_Widget
             // 没发出去：作废这枚令牌，否则冷却期会拦住重试；也不算访客的一次失败
             $this->db->query($this->db->delete('table.' . self::TABLE_TOKENS)->where('token = ?', $hash));
             $this->undoAttempt();
+            $this->log(self::EVENT_MAIL_FAILED, $user['uid']);
             throw new XCaptcha_Passport_Exception(_t('邮件发送失败，请稍后再试或联系管理员。'));
         }
         error_log('XCaptcha: 已向 uid=' . $user['uid'] . ' 发送找回密码邮件');
+        $this->log(self::EVENT_SENT, $user['uid']);
     }
 
     /**
@@ -230,16 +244,6 @@ class XCaptcha_Passport extends Typecho_Widget
     private function deliverMail(array $user, $link)
     {
         $smtp = $this->config->getPassportSmtp();
-        $from = $smtp['from'] !== '' ? $smtp['from'] : $smtp['user'];
-        if ($smtp['host'] === '' || $from === '') {
-            error_log('XCaptcha: 找回密码的 SMTP 服务器或发件人地址没有配置，邮件未发送');
-            return false;
-        }
-
-        require_once __DIR__ . '/lib/PHPMailer/Exception.php';
-        require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
-        require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
-
         $siteName = (string) $this->options->title;
         $requestTime = (new Typecho_Date((int) $this->options->gmtTime))->format('Y-m-d H:i:s');
         $expireMinutes = (int) ($this->config->getPassportTokenTtl() / 60);
@@ -258,46 +262,24 @@ class XCaptcha_Passport extends Typecho_Widget
         }
 
         $body = strtr($this->config->getPassportMailTemplate(), $escaped);
-        $plain = html_entity_decode(strip_tags(preg_replace('/<(br|hr)\s*\/?>|<\/(p|h[1-6]|li|tr|div)>/i', "\n", $body)), ENT_QUOTES, 'UTF-8');
-        $plain = trim(preg_replace("/\n{3,}/", "\n\n", $plain));
+        $plain = XCaptcha_Mailer::toText($body);
         if (strpos($plain, $link) === false) {
             $plain .= "\n\n" . $link;
         }
+        if ($smtp['fromName'] === '') {
+            $smtp['fromName'] = $siteName;
+        }
+        $subject = strtr($this->config->getPassportMailSubject(), [
+            '{sitename}' => $siteName,
+            '{username}' => (string) $user['name'],
+        ]);
 
-        try {
-            $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-            $mail->CharSet = PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
-            $mail->isSMTP();
-            $mail->Host = $smtp['host'];
-            $mail->Port = $smtp['port'];
-            $mail->Timeout = 15;
-            if ($smtp['secure'] === 'none') {
-                $mail->SMTPSecure = '';
-                $mail->SMTPAutoTLS = false;
-            } else {
-                $mail->SMTPSecure = $smtp['secure'] === 'tls'
-                    ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS
-                    : PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
-            }
-            $mail->SMTPAuth = $smtp['user'] !== '';
-            if ($mail->SMTPAuth) {
-                $mail->Username = $smtp['user'];
-                $mail->Password = $smtp['password'];
-            }
-            $mail->setFrom($from, $smtp['fromName'] !== '' ? $smtp['fromName'] : $siteName);
-            $mail->addAddress($user['mail'], (string) $user['name']);
-            $mail->isHTML(true);
-            $mail->Subject = strtr($this->config->getPassportMailSubject(), [
-                '{sitename}' => $siteName,
-                '{username}' => (string) $user['name'],
-            ]);
-            $mail->Body = $body;
-            $mail->AltBody = $plain;
-            return $mail->send();
-        } catch (Throwable $e) {
-            error_log('XCaptcha: 发送找回密码邮件失败: ' . $e->getMessage());
+        $error = XCaptcha_Mailer::send($smtp, $user['mail'], (string) $user['name'], $subject, $body, $plain);
+        if ($error !== null) {
+            error_log('XCaptcha: 发送找回密码邮件失败: ' . $error);
             return false;
         }
+        return true;
     }
 
     /* ---------- 重置 ---------- */
@@ -340,7 +322,7 @@ class XCaptcha_Passport extends Typecho_Widget
             }
             $password = (string) $this->request->get('password', '');
             $this->checkPassword($password, (int) $record['uid']);
-            $this->checkCaptcha();
+            $this->checkCaptcha((int) $record['uid']);
         } catch (XCaptcha_Passport_Exception $e) {
             $this->notice->set($e->getMessage(), 'error');
             return false;
@@ -354,6 +336,7 @@ class XCaptcha_Passport extends Typecho_Widget
             'authCode' => bin2hex(random_bytes(16)),
         ])->where('uid = ?', $record['uid']));
         $this->db->query($this->db->delete('table.' . self::TABLE_TOKENS)->where('uid = ?', $record['uid']));
+        $this->log(self::EVENT_RESET, (int) $record['uid']);
         return true;
     }
 
@@ -390,9 +373,10 @@ class XCaptcha_Passport extends Typecho_Widget
 
     /**
      * 按找回密码的验证码配置校验本次提交
+     * @param int $uid 重置密码时是链接对应的用户，申请时为 0
      * @throws XCaptcha_Passport_Exception
      */
-    private function checkCaptcha()
+    private function checkCaptcha($uid = 0)
     {
         if ($this->captcha->isCaptchaDisabled()) {
             return;
@@ -402,6 +386,7 @@ class XCaptcha_Passport extends Typecho_Widget
             throw new XCaptcha_Passport_Exception(_t('验证码尚未配置完整，请联系管理员。'));
         }
         if (!XCaptcha_Plugin::verifySubmission($this->captcha)) {
+            $this->log(self::EVENT_CAPTCHA_FAILED, $uid);
             throw new XCaptcha_Passport_Exception(_t('人机验证未通过，请重试。'));
         }
     }
@@ -442,6 +427,7 @@ class XCaptcha_Passport extends Typecho_Widget
             $rows['attempts'] = 0;
             $rows['locked_until'] = $now + $lock;
             $this->db->query($this->db->update($table)->rows($rows)->where('ip = ?', $ip));
+            $this->log(self::EVENT_RATE_LOCKED);
             throw new XCaptcha_Passport_Exception($this->lockedMessage($lock));
         }
         $this->db->query($this->db->update($table)->rows($rows)->where('ip = ?', $ip));
@@ -470,7 +456,7 @@ class XCaptcha_Passport extends Typecho_Widget
     }
 
     /**
-     * 删除过期、已用的令牌和太久以前的频率记录
+     * 删除过期、已用的令牌和太久以前的频率记录、申请记录
      */
     private function cleanup()
     {
@@ -479,6 +465,32 @@ class XCaptcha_Passport extends Typecho_Widget
             ->where('created_at < ? OR used = ?', $now - $this->config->getPassportTokenTtl(), 1));
         $this->db->query($this->db->delete('table.' . self::TABLE_FAILS)
             ->where('last_attempt < ? AND locked_until < ?', time() - self::FAIL_KEEP_DAYS * 86400, time()));
+        try {
+            $this->db->query($this->db->delete('table.' . self::TABLE_LOG)
+                ->where('created_at < ?', time() - self::FAIL_KEEP_DAYS * 86400));
+        } catch (Typecho_Db_Exception $e) {
+            // 升级后还没保存过配置，记录表尚未建
+        }
+    }
+
+    /**
+     * 记一条申请记录，给后台「记录」页看；只记事件、用户和 IP，不记访客填的内容。
+     * 记录失败不影响找回密码本身。
+     * @param string $event EVENT_* 之一
+     * @param int    $uid   相关用户，没有时为 0
+     */
+    private function log($event, $uid = 0)
+    {
+        try {
+            $this->db->query($this->db->insert('table.' . self::TABLE_LOG)->rows([
+                'created_at' => time(),
+                'event' => $event,
+                'uid' => (int) $uid,
+                'ip' => substr($this->request->getIp(), 0, 45),
+            ]));
+        } catch (Exception $e) {
+            error_log('XCaptcha: 写找回密码记录失败: ' . $e->getMessage());
+        }
     }
 
     /* ---------- 表单 ---------- */
@@ -550,7 +562,7 @@ class XCaptcha_Passport extends Typecho_Widget
     }
 
     /**
-     * 建表（已存在则跳过）。沿用 Passport 插件的表结构，MySQL、PostgreSQL、SQLite 都能用
+     * 建表（已存在则跳过）。令牌表和频率表沿用 Passport 插件的结构，MySQL、PostgreSQL、SQLite 都能用
      */
     public static function createTables()
     {
@@ -558,6 +570,7 @@ class XCaptcha_Passport extends Typecho_Widget
         $prefix = $db->getPrefix();
         $tokens = $prefix . self::TABLE_TOKENS;
         $fails = $prefix . self::TABLE_FAILS;
+        $log = $prefix . self::TABLE_LOG;
         $adapter = strtolower((string) $db->getAdapterName());
 
         if (strpos($adapter, 'mysql') !== false) {
@@ -578,6 +591,13 @@ class XCaptcha_Passport extends Typecho_Widget
                 PRIMARY KEY (`ip`),
                 INDEX `locked_until` (`locked_until`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", Typecho_Db::WRITE);
+            $db->query("CREATE TABLE IF NOT EXISTS `{$log}` (
+                `created_at` INT(10) UNSIGNED NOT NULL,
+                `event` VARCHAR(20) NOT NULL,
+                `uid` INT(10) UNSIGNED NOT NULL DEFAULT 0,
+                `ip` VARCHAR(45) NOT NULL DEFAULT '',
+                INDEX `created_at` (`created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", Typecho_Db::WRITE);
             return;
         }
 
@@ -597,6 +617,81 @@ class XCaptcha_Passport extends Typecho_Widget
             locked_until INTEGER NOT NULL DEFAULT 0
         )", Typecho_Db::WRITE);
         $db->query("CREATE INDEX IF NOT EXISTS {$fails}_locked_until ON {$fails} (locked_until)", Typecho_Db::WRITE);
+        $db->query("CREATE TABLE IF NOT EXISTS {$log} (
+            created_at INTEGER NOT NULL,
+            event VARCHAR(20) NOT NULL,
+            uid INTEGER NOT NULL DEFAULT 0,
+            ip VARCHAR(45) NOT NULL DEFAULT ''
+        )", Typecho_Db::WRITE);
+        $db->query("CREATE INDEX IF NOT EXISTS {$log}_created_at ON {$log} (created_at)", Typecho_Db::WRITE);
+    }
+
+    /**
+     * 解封一个 IP（同时清零计数）
+     * @param string $ip
+     * @return boolean 有没有这条记录
+     */
+    public static function unblockIp($ip)
+    {
+        $db = Typecho_Db::get();
+        $table = $db->getPrefix() . self::TABLE_FAILS;
+        $affected = $db->query($db->update($table)->rows(['locked_until' => 0, 'attempts' => 0])->where('ip = ?', $ip));
+        return $affected > 0;
+    }
+
+    /**
+     * 最近的频率记录，封禁中的排在前面
+     * @param int $limit
+     * @return array 每项 ip, attempts, last_attempt, locked_until；表还没建时为空
+     */
+    public static function recentFails($limit)
+    {
+        $db = Typecho_Db::get();
+        $table = $db->getPrefix() . self::TABLE_FAILS;
+        try {
+            $rows = $db->fetchAll($db->select()->from($table)->order($table . '.last_attempt', Typecho_Db::SORT_DESC)->limit((int) $limit));
+        } catch (Typecho_Db_Exception $e) {
+            return [];
+        }
+        $now = time();
+        usort($rows, function ($a, $b) use ($now) {
+            $lockedA = (int) $a['locked_until'] > $now;
+            $lockedB = (int) $b['locked_until'] > $now;
+            if ($lockedA !== $lockedB) {
+                return $lockedA ? -1 : 1;
+            }
+            return (int) $b['last_attempt'] - (int) $a['last_attempt'];
+        });
+        return $rows;
+    }
+
+    /**
+     * 最近的找回密码申请记录
+     * @param int $limit
+     * @return array 每项 created_at, event, uid, ip, name（用户名，没有时为空）；表还没建时为空
+     */
+    public static function recentLogs($limit)
+    {
+        $db = Typecho_Db::get();
+        $table = $db->getPrefix() . self::TABLE_LOG;
+        try {
+            $rows = $db->fetchAll($db->select()->from($table)->order($table . '.created_at', Typecho_Db::SORT_DESC)->limit((int) $limit));
+        } catch (Typecho_Db_Exception $e) {
+            return [];
+        }
+        $uids = array_values(array_unique(array_filter(array_map(function ($row) {
+            return (int) $row['uid'];
+        }, $rows))));
+        $names = [];
+        if ($uids) {
+            foreach ($db->fetchAll($db->select('uid', 'name')->from('table.users')->where('uid IN ?', $uids)) as $user) {
+                $names[(int) $user['uid']] = $user['name'];
+            }
+        }
+        foreach ($rows as &$row) {
+            $row['name'] = $names[(int) $row['uid']] ?? '';
+        }
+        return $rows;
     }
 
     /**
@@ -623,10 +718,8 @@ class XCaptcha_Passport extends Typecho_Widget
             return;
         }
 
-        $db = Typecho_Db::get();
         try {
-            $db->query($db->update($db->getPrefix() . self::TABLE_FAILS)
-                ->rows(['locked_until' => 0, 'attempts' => 0])->where('ip = ?', $ip));
+            self::unblockIp($ip);
             $notice->set(_t('已解封 %s', htmlspecialchars($ip, ENT_QUOTES, 'UTF-8')), 'success');
         } catch (Typecho_Db_Exception $e) {
             $notice->set(_t('解封失败：%s', htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')), 'error');

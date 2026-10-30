@@ -5,7 +5,7 @@
  *
  * @package XCaptcha
  * @author CairBin
- * @version 1.4.0
+ * @version 1.5.0
  * @link https://cairbin.top
  * contributor: yumusb(https://github.com/yumusb)
  */
@@ -14,6 +14,8 @@ include "lib/class.geetestlib.php";
 include_once "includes/XCaptcha_Config.php";
 include_once "includes/XCaptcha_Validator.php";
 include_once "includes/XCaptcha_Render.php";
+include_once "includes/XCaptcha_Settings.php";
+include_once "includes/XCaptcha_Mailer.php";
 
 if (!defined("__TYPECHO_ROOT_DIR__")) {
     exit();
@@ -60,8 +62,10 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
         ];
 
         Helper::addAction("xcaptcha", "XCaptcha_Action");
-        
-        return _t('插件已经激活');
+        // 后台「设置」菜单下的新设置页
+        XCaptcha_Settings::registerAdmin();
+
+        return _t('插件已经激活，设置入口在后台「设置 → XCaptcha」');
     }
 
     /**
@@ -70,6 +74,7 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
     public static function deactivate()
     {
         Helper::removeAction("xcaptcha");
+        XCaptcha_Settings::unregisterAdmin();
         // 找回密码的数据表保留，重新启用后接着用
         XCaptcha_Passport::removeRoutes();
     }
@@ -82,46 +87,22 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
     }
 
     /**
-     * 保存配置时由 Typecho 调用（启用插件时不会调）。
-     * 找回密码的路由和数据表在这里处理：禁用再启用插件会丢配置，所以不能放在 activate 里。
+     * 原生设置页保存配置时由 Typecho 调用（启用插件时不会调）。
+     * 找回密码的路由、数据表和新设置页在这里同步：禁用再启用插件会丢配置，所以不能只放在 activate 里。
      * @param array $settings 本次提交的配置
      * @return string|null 要显示的提示；返回 null 时 Typecho 显示默认的「插件设置已经保存」
      */
     public static function configCheck($settings)
     {
-        $enabled = isset($settings['passportEnabled']) && (string) $settings['passportEnabled'] === '1';
-        if (!$enabled) {
-            XCaptcha_Passport::removeRoutes();
-            return null;
-        }
-
         try {
-            XCaptcha_Passport::createTables();
-            XCaptcha_Passport::addRoutes();
+            $notes = XCaptcha_Settings::sync($settings);
         } catch (Exception $e) {
             return _t('插件设置已经保存，但找回密码的数据表或路由没能建好：%s', $e->getMessage());
         }
+        if (!isset($settings['passportEnabled']) || (string) $settings['passportEnabled'] !== '1') {
+            return null;
+        }
 
-        $notes = [];
-        $plugins = Typecho_Plugin::export();
-        if (isset($plugins['activated']['Passport'])) {
-            $notes[] = _t('Passport 插件仍在启用，它的找回密码页面会优先生效，请先禁用它');
-        }
-        if (trim((string) ($settings['passportSmtpHost'] ?? '')) === '') {
-            $notes[] = _t('还没填 SMTP 服务器，重置邮件发不出去');
-        }
-        $mode = (string) ($settings['passportCaptcha'] ?? 'follow');
-        if ($mode === 'none') {
-            $notes[] = _t('找回密码没有验证码，只靠频率限制挡机器人');
-        } elseif ($mode === 'custom') {
-            $tool = (string) ($settings['passportCaptchaChoosen'] ?? '');
-            $missing = !in_array($tool, XCaptcha_Config::TOOLS, true)
-                || ($tool === 'cap' && trim((string) ($settings['passportCapEndpoint'] ?? '')) === '')
-                || ($tool !== 'altcha' && (trim((string) ($settings['passportCaptchaId'] ?? '')) === '' || trim((string) ($settings['passportSecretKey'] ?? '')) === ''));
-            if ($missing) {
-                $notes[] = _t('找回密码单独配置的验证码还不完整，在补全之前找回密码页会拒绝所有提交');
-            }
-        }
         // 数字项填错时运行时会用默认值，这里提醒一下
         $ranges = [
             'passportSmtpPort' => [_t('端口'), 1, 65535, 465],

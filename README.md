@@ -60,6 +60,12 @@ wget https://github.com/CairBin/XCaptcha/archive/refs/heads/main.zip
 <button type="submit" class="custom-submit-button submit"><?php _e('提交评论'); ?></button>
 ```
 
+### 设置页
+
+v1.5.0 起插件设置在后台「设置 → XCaptcha」，分「验证码 / 找回密码 / 邮件 / 安全 / 记录」几个标签页，手机上也能用。页面上可以检测 Cap 服务、发测试邮件、查看找回密码的申请记录和封禁中的 IP。插件列表里的「设置」仍是原生的设置页，作为备用，两边保存的是同一份配置。
+
+从旧版本升级后，在原生设置页点一次「保存设置」（或者禁用再启用插件）就会出现新菜单。
+
 ### Altcha配置
 
 Altcha采用本地验证方案，自动生成HMAC密钥，无需手动填写`Captcha ID`和`Secret Key`

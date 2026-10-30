@@ -89,6 +89,7 @@ class XCaptcha_Config{
         // 只在后台配置页上输出封禁记录表；保存配置的 action 请求里也会构建这个表单，那时不能输出内容
         $request = Typecho_Widget::widget('Widget_Options')->request;
         if (stripos((string) $request->getRequestUrl(), 'options-plugin.php') !== false) {
+            echo '<p class="message notice" style="margin:0 0 1em">' . _t('XCaptcha 有新的设置页，带检测和记录：<a href="%s">设置 → XCaptcha</a>。这里是备用的原生设置页。', htmlspecialchars(XCaptcha_Settings::panelUrl(), ENT_QUOTES, 'UTF-8')) . '</p>';
             XCaptcha_Passport::handleUnblockRequest();
             echo XCaptcha_Passport::renderFailLog();
             echo self::configPageScript();
