@@ -31,7 +31,8 @@ class XCaptcha_Request
 		$response = curl_exec($ch);
 		
 		if (curl_errno($ch)) {
-			echo '请求错误: ' . curl_error($ch);
+			// 不能 echo：登录、找回密码校验失败后还要跳转，提前输出会让跳转失效
+			error_log('XCaptcha: 请求 ' . $urlPath . ' 失败: ' . curl_error($ch));
 		}
 		
 		curl_close($ch);

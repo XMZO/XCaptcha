@@ -5,7 +5,7 @@
  *
  * @package XCaptcha
  * @author CairBin
- * @version 1.3.1
+ * @version 1.4.0
  * @link https://cairbin.top
  * contributor: yumusb(https://github.com/yumusb)
  */
@@ -70,6 +70,8 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
     public static function deactivate()
     {
         Helper::removeAction("xcaptcha");
+        // 找回密码的数据表保留，重新启用后接着用
+        XCaptcha_Passport::removeRoutes();
     }
     /**
      * Config panel
@@ -77,6 +79,68 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
     public static function config(Typecho_Widget_Helper_Form $form)
     {
         XCaptcha_Config::config($form);
+    }
+
+    /**
+     * 保存配置时由 Typecho 调用（启用插件时不会调）。
+     * 找回密码的路由和数据表在这里处理：禁用再启用插件会丢配置，所以不能放在 activate 里。
+     * @param array $settings 本次提交的配置
+     * @return string|null 要显示的提示；返回 null 时 Typecho 显示默认的「插件设置已经保存」
+     */
+    public static function configCheck($settings)
+    {
+        $enabled = isset($settings['passportEnabled']) && (string) $settings['passportEnabled'] === '1';
+        if (!$enabled) {
+            XCaptcha_Passport::removeRoutes();
+            return null;
+        }
+
+        try {
+            XCaptcha_Passport::createTables();
+            XCaptcha_Passport::addRoutes();
+        } catch (Exception $e) {
+            return _t('插件设置已经保存，但找回密码的数据表或路由没能建好：%s', $e->getMessage());
+        }
+
+        $notes = [];
+        $plugins = Typecho_Plugin::export();
+        if (isset($plugins['activated']['Passport'])) {
+            $notes[] = _t('Passport 插件仍在启用，它的找回密码页面会优先生效，请先禁用它');
+        }
+        if (trim((string) ($settings['passportSmtpHost'] ?? '')) === '') {
+            $notes[] = _t('还没填 SMTP 服务器，重置邮件发不出去');
+        }
+        $mode = (string) ($settings['passportCaptcha'] ?? 'follow');
+        if ($mode === 'none') {
+            $notes[] = _t('找回密码没有验证码，只靠频率限制挡机器人');
+        } elseif ($mode === 'custom') {
+            $tool = (string) ($settings['passportCaptchaChoosen'] ?? '');
+            $missing = !in_array($tool, XCaptcha_Config::TOOLS, true)
+                || ($tool === 'cap' && trim((string) ($settings['passportCapEndpoint'] ?? '')) === '')
+                || ($tool !== 'altcha' && (trim((string) ($settings['passportCaptchaId'] ?? '')) === '' || trim((string) ($settings['passportSecretKey'] ?? '')) === ''));
+            if ($missing) {
+                $notes[] = _t('找回密码单独配置的验证码还不完整，在补全之前找回密码页会拒绝所有提交');
+            }
+        }
+        // 数字项填错时运行时会用默认值，这里提醒一下
+        $ranges = [
+            'passportSmtpPort' => [_t('端口'), 1, 65535, 465],
+            'passportTokenTtl' => [_t('重置链接有效期'), 1, 1440, 60],
+            'passportMailCooldown' => [_t('同一账号两次发信最短间隔'), 0, 1440, 5],
+            'passportRateLimitAttempts' => [_t('10 分钟内最多提交次数'), 1, 1000, 20],
+            'passportRateLimitLock' => [_t('超出后封禁时长'), 1, 1440, 5],
+            'passportPasswordMinLength' => [_t('新密码最短长度'), 1, 64, 8],
+        ];
+        foreach ($ranges as $name => list($label, $min, $max, $default)) {
+            $raw = trim((string) ($settings[$name] ?? ''));
+            if (!preg_match('/^\d+$/', $raw) || (int) $raw < $min || (int) $raw > $max) {
+                $notes[] = _t('「%s」要填 %d–%d 的整数，现在按默认值 %d 处理', $label, $min, $max, $default);
+            }
+        }
+
+        $url = Typecho_Common::url(XCaptcha_Passport::PATH_FORGOT, Helper::options()->index);
+        $message = _t('插件设置已经保存，找回密码页：%s', $url);
+        return $notes ? $message . '；' . implode('；', $notes) : $message;
     }
 
     /**
@@ -91,8 +155,10 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
 
     /**
      * 按当前配置的验证工具校验提交上来的验证码
+     * @param XCaptcha_Config $config 主配置或找回密码的配置档
+     * @return boolean
      */
-    private static function verifySubmission(XCaptcha_Config $config)
+    public static function verifySubmission(XCaptcha_Config $config)
     {
         switch ($config->getCaptchaChoosen()) {
             case "geetest":
@@ -222,6 +288,7 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
     {
         $config = new XCaptcha_Config();
         XCaptcha_Render::renderLoginPage($config);
+        XCaptcha_Render::renderLoginLink($config);
     }
 
     /**
@@ -235,10 +302,11 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
 
     /**
      * 给Action使用
+     * @param string $profile 配置档：找回密码页「单独配置」了极验证时为 passport
      */
-    public static function responseGeetest()
+    public static function responseGeetest($profile = '')
     {
-        $config = new XCaptcha_Config();
+        $config = new XCaptcha_Config($profile === XCaptcha_Config::PROFILE_PASSPORT ? $profile : '');
         @session_start();
         $geetestSdk = new GeetestLib(
             $config->getCaptchaId(),

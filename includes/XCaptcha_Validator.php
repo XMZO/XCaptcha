@@ -137,8 +137,12 @@ class XCaptcha_Validator
     public static function verifyOtherCaptcha(XCaptcha_Config $config)
     {
         list($postToken, $urlPath) = XCaptcha_Utils::getCaptchaTokenAndUrl($config->getCaptchaChoosen(), $config->getVerifyUrl());
+        if ($postToken === '') {
+            return false;
+        }
         $responseData = XCaptcha_Request::makeCaptchaRequest($urlPath, $config->getSecretKey(), $postToken);
 
-        return $responseData->success == true;
+        // 请求失败或返回的不是 JSON 时 $responseData 为 null，按未通过处理
+        return is_object($responseData) && !empty($responseData->success);
     }
 }

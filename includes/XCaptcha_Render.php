@@ -127,14 +127,18 @@ EOF;
      * 输出Geetest渲染的HTML JS
      * @param string $widgetSize 尺寸
      * @param XCaptcha_GeetestInfo $geetest 极验证信息类
-     */    
-    private static function echoGeetestContent($widgetSize, XCaptcha_GeetestInfo $geetest)
+     * @param string $profile 配置档：找回密码页「单独配置」时为 passport，出题接口要用那套密钥
+     */
+    private static function echoGeetestContent($widgetSize, XCaptcha_GeetestInfo $geetest, $profile = '')
     {
         $sizeSelector = ["normal" => "300px", "flexible"=>"100%", "compact" => "150px"];
         $geetestSize = $sizeSelector[$widgetSize];
         $dismod = $geetest->dismod;
 
         $ajaxUri = '/index.php/action/xcaptcha?do=ajaxResponseCaptchaData&type=geetest';
+        if ($profile !== '') {
+            $ajaxUri .= '&profile=' . rawurlencode($profile);
+        }
         echo <<<EOF
         <script>
             console.log("XCaptcha: 正在配置Geetest初始化函数...");
@@ -394,6 +398,53 @@ EOF;
 			return;
         }
 
+        self::renderAdminForm($config);
+    }
+
+    /**
+     * 找回密码页的验证码：页面套的是后台样式，表单结构和登录页一样，走同一套插入逻辑。
+     * 选了「不用验证码」或配置不全时不渲染；配置不全时 XCaptcha_Passport 会拒绝提交并提示。
+     * @static
+     * @param XCaptcha_Config $config 找回密码页的配置档
+     */
+    public static function renderPassportForm(XCaptcha_Config $config)
+    {
+        if ($config->isCaptchaDisabled() || !$config->checkKeys()) {
+            return;
+        }
+        self::renderAdminForm($config);
+    }
+
+    /**
+     * 后台登录页「返回首页」旁边加「忘记密码」链接
+     * @static
+     * @param XCaptcha_Config $config 主配置
+     */
+    public static function renderLoginLink(XCaptcha_Config $config)
+    {
+        $request = Typecho_Widget::widget('Widget_Options')->request;
+        if (stripos((string) $request->getRequestUrl(), 'login.php') === false) {
+            return;
+        }
+        if (!$config->isPassportEnabled() || !$config->isPassportLoginLinkEnabled()) {
+            return;
+        }
+        $url = Typecho_Common::url(XCaptcha_Passport::PATH_FORGOT, Helper::options()->index);
+        $flags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE;
+        echo '<script>$(function () {'
+            . 'var more = $(".more-link").first();'
+            . 'if (!more.length) return;'
+            . 'more.append(" • ").append($("<a>").attr("href", ' . json_encode($url, $flags) . ').text(' . json_encode(_t('忘记密码'), $flags) . '));'
+            . '});</script>';
+    }
+
+    /**
+     * 在后台样式的表单（登录、注册、找回密码）里渲染验证码：用 jQuery 插到提交按钮前，验证通过前按钮不可用
+     * @static
+     * @param XCaptcha_Config $config 配置类
+     */
+    private static function renderAdminForm(XCaptcha_Config $config)
+    {
         if(self::isWidgetType($config->getCaptchaChoosen())){
             self::echoLoginPageWidget($config);
             return;
@@ -411,7 +462,7 @@ EOF;
         self::echoContent($cdnUrl, $captchaScript, 'login', $config->getCaptchaChoosen());    // 输出通用部分
         if($config->getCaptchaChoosen() == 'geetest'){
             // geetest需要额外配置
-            self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig());
+            self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig(), $config->getProfile());
         }
     }
 
@@ -454,7 +505,7 @@ EOF;
         self::echoContent($cdnUrl, $captchaScript, 'comments', $config->getCaptchaChoosen());    // 输出通用部分
         if($config->getCaptchaChoosen() == 'geetest'){
             // geetest需要额外配置
-            self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig());
+            self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig(), $config->getProfile());
         }
     }
 
@@ -514,7 +565,7 @@ EOF;
 
         // Geetest 需要额外配置
         if($captchaChoosen == 'geetest'){
-            self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig());
+            self::echoGeetestContent($config->getWidgetSize(), $config->getGeetestConfig(), $config->getProfile());
         }
     }
 
