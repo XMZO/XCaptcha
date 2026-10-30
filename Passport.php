@@ -155,8 +155,10 @@ class XCaptcha_Passport extends Typecho_Widget
      */
     private function sendResetMail($account)
     {
+        // 访客看到的提示都一样，管理员排查「没收到信」只能看这里的日志；不记访客填的内容
         $user = $this->findUser($account);
         if (!$user) {
+            error_log('XCaptcha: 找回密码申请没有匹配的账号，未发信');
             return;
         }
 
@@ -166,6 +168,7 @@ class XCaptcha_Passport extends Typecho_Widget
             $recent = $this->db->fetchRow($this->db->select('created_at')->from('table.' . self::TABLE_TOKENS)
                 ->where('uid = ? AND created_at > ?', $user['uid'], $now - $cooldown)->limit(1));
             if ($recent) {
+                error_log('XCaptcha: 找回密码 uid=' . $user['uid'] . ' 还在发信冷却期内，未重复发信');
                 return;
             }
         }
@@ -187,6 +190,7 @@ class XCaptcha_Passport extends Typecho_Widget
             $this->undoAttempt();
             throw new XCaptcha_Passport_Exception(_t('邮件发送失败，请稍后再试或联系管理员。'));
         }
+        error_log('XCaptcha: 已向 uid=' . $user['uid'] . ' 发送找回密码邮件');
     }
 
     /**
@@ -196,13 +200,21 @@ class XCaptcha_Passport extends Typecho_Widget
      */
     private function findUser($account)
     {
-        $account = trim($account);
+        // 中文输入法容易打出全角＠
+        $account = trim(str_replace('＠', '@', $account));
         if ($account === '' || strlen($account) > 200) {
             return null;
         }
         $field = strpos($account, '@') !== false ? 'mail' : 'name';
         $user = $this->db->fetchRow($this->db->select('uid', 'name', 'mail')->from('table.users')
             ->where($field . ' = ?', $account)->limit(1));
+        if (!$user) {
+            // 手机键盘常把首字母自动改成大写，邮箱也不该区分大小写：精确匹配不到时不区分大小写再找一次，
+            // 只有恰好一个账号对得上才算，免得 Bob 和 bob 这样的两个账号选错人
+            $rows = $this->db->fetchAll($this->db->select('uid', 'name', 'mail')->from('table.users')
+                ->where('LOWER(' . $field . ') = ?', strtolower($account))->limit(2));
+            $user = count($rows) === 1 ? $rows[0] : null;
+        }
         if (!$user || empty($user['mail'])) {
             return null;
         }

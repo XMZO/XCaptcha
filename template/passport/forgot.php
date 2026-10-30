@@ -13,7 +13,7 @@ include __DIR__ . '/header.php';
         <form action="<?php echo htmlspecialchars($action, ENT_QUOTES, 'UTF-8'); ?>" method="post" name="forgot" role="form">
             <p>
                 <label for="account" class="sr-only"><?php _e('用户名或邮箱'); ?></label>
-                <input type="text" id="account" name="account" placeholder="<?php _e('用户名或邮箱'); ?>" class="text-l w-100" autocomplete="username" maxlength="200" autofocus required />
+                <input type="text" id="account" name="account" placeholder="<?php _e('用户名或邮箱'); ?>" class="text-l w-100" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="200" autofocus required />
             </p>
             <p class="submit">
                 <button type="submit" class="btn btn-l w-100 primary"><?php _e('发送重置邮件'); ?></button>
