@@ -99,6 +99,8 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
                 return (bool) XCaptcha_Validator::verifyGeetest($config);
             case "altcha":
                 return XCaptcha_Validator::verifyAltchaSolution($config);
+            case "cap":
+                return XCaptcha_Validator::verifyCapToken($config);
             default:
                 return (bool) XCaptcha_Validator::verifyOtherCaptcha($config);
         }
@@ -198,6 +200,7 @@ class XCaptcha_Plugin implements Typecho_Plugin_Interface
             $messages = [
                 "geetest" => "Geetest:Invalid verification code.",
                 "altcha" => "Altcha:Invalid verification code.",
+                "cap" => "Cap:Invalid verification code.",
             ];
             throw new Typecho_Widget_Exception(
                 _t($messages[$config->getCaptchaChoosen()] ?? "Invalid verification code.")

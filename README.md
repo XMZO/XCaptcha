@@ -12,6 +12,7 @@
 * [Google reCaptcha v2](https://developers.google.cn/recaptcha/docs/display?hl=zh-cn)
 * [极验证Geetest v3](https://www2.geetest.com)
 * [altcha-org](https://altcha.org/docs/get-started/)
+* [Cap](https://capjs.js.org)（需自行部署 Cap Standalone）
 
 考虑接下来支持：
 * Google reCaptcha v3
@@ -62,6 +63,16 @@ wget https://github.com/CairBin/XCaptcha/archive/refs/heads/main.zip
 ### Altcha配置
 
 Altcha采用本地验证方案，自动生成HMAC密钥，无需手动填写`Captcha ID`和`Secret Key`
+
+### Cap配置
+
+Cap 需要一个自己部署的 [Cap Standalone](https://capjs.js.org/guide/standalone/) 服务，可以和博客不在同一台服务器上：
+
+1. 在 Cap 后台创建站点 key，记下站点 key 和它的密钥（Secret Key，不是登录后台用的 `ADMIN_KEY`）
+2. 服务端设置 `ENABLE_ASSETS_SERVER=true`，组件脚本和 WASM 从服务自己的 `/assets/` 加载，不经过 jsDelivr；建议同时用 `WIDGET_VERSION`、`WASM_VERSION` 固定版本
+3. 插件里「验证工具」选 Cap，`Captcha ID` 填站点 key，`Secret Key` 填密钥，「Cap 服务地址」填服务的根地址，如 `https://cap.example.com`
+
+访客的浏览器会直接向 Cap 服务请求题目、提交答案，博客服务器再向 `服务地址/站点key/siteverify` 核对 token，所以 Cap 服务要让访客和博客服务器都能访问到。如需限制来源，在 Cap 里把站点 key 的 CORS 设成博客域名。
 
 
 部分主题可能不存在`comments.php`文件，这时候你需要从其他文件里找到评论表单，并在合适的位置添加这行代码。

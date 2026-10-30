@@ -104,6 +104,31 @@ class XCaptcha_Validator
 
 
     /**
+     * 验证 Cap：把组件交上来的 token 发给 Cap Standalone 的 siteverify 核对，token 由服务端保证只能用一次
+     * @static
+     * @param  XCaptcha_Config $config  配置
+     * @return boolean                  验证是否通过
+     */
+    public static function verifyCapToken(XCaptcha_Config $config)
+    {
+        $token = $_POST['cap-token'] ?? '';
+        if (!is_string($token) || $token === '') {
+            return false;
+        }
+
+        $verifyUrl = $config->getVerifyUrl();
+        if ($verifyUrl == '') {
+            $verifyUrl = $config->getCapApiEndpoint() . 'siteverify';
+        }
+        $result = XCaptcha_Request::makeJsonRequest($verifyUrl, [
+            'secret' => $config->getSecretKey(),
+            'response' => $token,
+        ]);
+
+        return is_array($result) && ($result['success'] ?? false) === true;
+    }
+
+    /**
      * 验证其他Captcha
      * @static
      * @param  XCaptcha_Config $config  配置
